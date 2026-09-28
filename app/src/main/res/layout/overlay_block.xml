@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:gravity="center" android:padding="32dp"
+    android:background="@color/block_bg">
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="⏸" android:textSize="64sp" android:textColor="@color/block_fg" />
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="Телефон на паузе" android:textSize="26sp" android:textStyle="bold" android:textColor="@color/block_fg" />
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="12dp"
+        android:gravity="center" android:text="Это приложение недоступно во время блокировки." android:textSize="16sp" android:textColor="@color/block_fg" />
+    <Button android:id="@+id/ovOpen" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="32dp" android:text="Открыть экран блокировки" />
+    <Button android:id="@+id/ovCall" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Позвонить" />
+    <Button android:id="@+id/ovSms" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="SMS" />
+</LinearLayout>

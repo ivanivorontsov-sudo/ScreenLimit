@@ -1,0 +1,18 @@
+<resources>
+    <style name="Theme.ScreenLimit" parent="Theme.Material3.Light">
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorOnPrimary">@color/on_primary</item>
+        <item name="colorPrimaryContainer">@color/primary_container</item>
+        <item name="android:colorBackground">@color/surface</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="android:statusBarColor">@color/surface</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+    <style name="Theme.ScreenLimit.Block" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">#9FA8FF</item>
+        <item name="colorOnPrimary">#10144A</item>
+        <item name="android:windowBackground">@color/block_bg</item>
+        <item name="android:statusBarColor">@color/block_bg</item>
+        <item name="android:navigationBarColor">@color/block_bg</item>
+    </style>
+</resources>

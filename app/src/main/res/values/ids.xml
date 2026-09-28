@@ -1,0 +1,8 @@
+<resources>
+    <item name="btnCall" type="id" /><item name="btnSms" type="id" /><item name="btnSos" type="id" /><item name="btnExit" type="id" />
+    <item name="btnConfirm" type="id" /><item name="btnCancel" type="id" /><item name="stepCounter" type="id" /><item name="stepQuestion" type="id" />
+    <item name="stepPhrase" type="id" /><item name="btnExtra15" type="id" /><item name="btnExtra30" type="id" /><item name="btnExtra60" type="id" />
+    <item name="btnRestOfDay" type="id" /><item name="btnDismiss" type="id" /><item name="usedToday" type="id" /><item name="remaining" type="id" />
+    <item name="btnLimit" type="id" /><item name="mainScroll" type="id" /><item name="permCount" type="id" /><item name="btnOnboardDone" type="id" />
+    <item name="ownerStatus" type="id" /><item name="btnRemoveOwner" type="id" />
+</resources>
