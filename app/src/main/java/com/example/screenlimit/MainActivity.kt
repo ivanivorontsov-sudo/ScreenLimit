@@ -29,6 +29,7 @@ class MainActivity : AppCompatActivity() {
     private val h = Handler(Looper.getMainLooper())
     private val refresh = object : Runnable { override fun run() { render(); h.postDelayed(this, 10_000) } }
     private val listener: () -> Unit = { h.post { if (!isFinishing) render() } }
+    private var lastSig = ""
 
     private val exportLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         uri ?: return@registerForActivityResult
@@ -53,6 +54,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        lastSig = ""
         Guard.addListener(listener)
         runCatching { Guard.tick(this) }
         if (Store.get(this).state.locked) { Guard.showBlock(this) }
@@ -61,9 +63,13 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() { super.onPause(); Guard.removeListener(listener); h.removeCallbacks(refresh) }
 
-    private fun render() {
+    private fun render(force: Boolean = false) {
         val store = Store.get(this)
         val st = store.state; val s = store.settings; val cfg = store.engineConfig()
+        // Перерисовываем только при видимых изменениях — иначе сбивается прокрутка и открытые диалоги.
+        val sig = listOf(st.usedMs / 60_000, st.locked, st.unlockedRestOfPeriod, st.bonusMs, s, store.history().size, Perms.allRequired(this), Owner.isDeviceOwner(this)).joinToString()
+        if (!force && sig == lastSig) return
+        lastSig = sig
         val locked = st.locked
         val limit = Engine.limitMs(s, cfg) + st.bonusMs
         val rem = Engine.remainingMs(s, st, cfg).coerceAtLeast(0)
@@ -194,14 +200,14 @@ class MainActivity : AppCompatActivity() {
     /** Любое изменение: ужесточение — сразу; ослабление — через 10 подтверждений; во время блокировки — нельзя. */
     fun propose(new: Settings) {
         val store = Store.get(this)
-        if (store.state.locked) { toast("Во время блокировки менять настройки нельзя"); render(); return }
+        if (store.state.locked) { toast("Во время блокировки менять настройки нельзя"); render(true); return }
         val old = store.settings
         if (new == old) return
         val why = SettingsPolicy.loosenings(old, new)
         if (why.isEmpty()) {
             store.settings = new
             store.log(HistoryEntry.SETTINGS, "Настройки изменены")
-            Guard.tick(this, "settings"); render()
+            Guard.tick(this, "settings"); render(true)
         } else {
             MaterialAlertDialogBuilder(this)
                 .setTitle("Это ослабление ограничений")
@@ -210,8 +216,8 @@ class MainActivity : AppCompatActivity() {
                     store.pendingSettings = new
                     startActivity(Intent(this, ExitActivity::class.java).putExtra(ExitActivity.EXTRA_PURPOSE, ExitActivity.P_SETTINGS))
                 }
-                .setNegativeButton("Отмена") { _, _ -> render() }
-                .setOnCancelListener { render() }
+                .setNegativeButton("Отмена") { _, _ -> render(true) }
+                .setOnCancelListener { render(true) }
                 .show()
         }
     }
@@ -239,7 +245,7 @@ class MainActivity : AppCompatActivity() {
         store.setHistory(HistoryEntry.merge(store.history(), parsed.history))
         store.log(HistoryEntry.IMPORT, "Импорт резервной копии: ${parsed.history.size} записей истории")
         parsed.settings?.let { propose(it) }
-        toast("Импорт выполнен"); render()
+        toast("Импорт выполнен"); render(true)
     }
 
     private fun toast(t: String) = Toast.makeText(this, t, Toast.LENGTH_LONG).show()

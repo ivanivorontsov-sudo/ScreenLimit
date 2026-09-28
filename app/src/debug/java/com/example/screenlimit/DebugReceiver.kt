@@ -15,6 +15,7 @@ import com.example.screenlimit.core.GuardState
 class DebugReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, i: Intent) {
         val store = Store.get(ctx)
+        i.getStringExtra("type")?.let { Guard.debugTypeSink?.invoke(it); resultData = "typed"; return }
         if (i.getBooleanExtra("clear_debug", false)) store.setDebug(0, 0)
         if (i.hasExtra("warn_unit_ms") || i.hasExtra("limit_ms"))
             store.setDebug(if (i.hasExtra("warn_unit_ms")) i.getLongExtra("warn_unit_ms", 0) else null,

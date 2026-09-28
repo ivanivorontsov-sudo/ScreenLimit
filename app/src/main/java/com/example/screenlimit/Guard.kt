@@ -32,6 +32,8 @@ object Guard {
     const val NOTIF_STATUS = 1
     const val NOTIF_WARN = 2
 
+    /** Только debug: ввод кириллицы в поле фразы из adb-теста (adb input text не умеет кириллицу). */
+    @Volatile var debugTypeSink: ((String) -> Unit)? = null
     @Volatile var lastForeground: String? = null      // от AccessibilityService
     @Volatile var lastForegroundAt: Long = 0
     private var lastTamperLog = 0L
@@ -120,7 +122,12 @@ object Guard {
         }
     }
 
+    /** Экран подтверждений открыт и активен — не перебивать его экраном блокировки. */
+    @Volatile var exitFlowVisible = false
+
     fun showBlock(ctx: Context) {
+        if (exitFlowVisible) return
+        if (BuildConfig.DEBUG) Log.d(TAG, "showBlock from " + Throwable().stackTrace.drop(1).take(2).joinToString(" <- ") { it.className.substringAfterLast('.') + "." + it.methodName })
         runCatching {
             ctx.startActivity(Intent(ctx, BlockActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))

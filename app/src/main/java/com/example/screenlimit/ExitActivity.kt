@@ -45,6 +45,7 @@ class ExitActivity : AppCompatActivity() {
     private fun cancel() {
         flow.cancel()
         h.removeCallbacksAndMessages(null)
+        Guard.exitFlowVisible = false
         if (purpose == P_LOCK && Store.get(this).state.locked) Guard.showBlock(this)
         finish()
     }
@@ -75,6 +76,7 @@ class ExitActivity : AppCompatActivity() {
             col.addView(til, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) })
         }
         val err = col.text("", 14f, color = getColor(R.color.danger), topDp = 8)
+        if (BuildConfig.DEBUG) input?.let { et -> Guard.debugTypeSink = { t -> h.post { et.setText(t) } } }
 
         // Кнопки: позиция меняется от шага к шагу (верх/низ, слева/справа, порядок).
         val btns = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -154,7 +156,9 @@ class ExitActivity : AppCompatActivity() {
         finish()
     }
 
-    override fun onDestroy() { h.removeCallbacksAndMessages(null); super.onDestroy() }
+    override fun onResume() { super.onResume(); Guard.exitFlowVisible = true }
+    override fun onPause() { super.onPause(); Guard.exitFlowVisible = false }
+    override fun onDestroy() { h.removeCallbacksAndMessages(null); Guard.debugTypeSink = null; super.onDestroy() }
 
     private object NoPaste : android.view.ActionMode.Callback {
         override fun onCreateActionMode(m: android.view.ActionMode?, menu: android.view.Menu?) = false

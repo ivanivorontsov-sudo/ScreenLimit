@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.LinearLayout
@@ -21,6 +22,8 @@ import java.util.Locale
 class BlockActivity : AppCompatActivity() {
     private lateinit var info: TextView
     private val h = Handler(Looper.getMainLooper())
+    private var allowedLaunchAt = 0L
+    private fun launch(i: Intent) { allowedLaunchAt = SystemClock.uptimeMillis(); runCatching { startActivity(i) } }
     private val refresh = object : Runnable { override fun run() { render(); h.postDelayed(this, 5_000) } }
     private val listener: () -> Unit = { h.post { if (!Store.get(this).state.locked) release() else render() } }
 
@@ -39,13 +42,13 @@ class BlockActivity : AppCompatActivity() {
         info = root.text("", 17f, gravity = Gravity.CENTER, color = white, topDp = 12)
         root.text("Доступны звонки и SMS. Остальное — после паузы.", 15f, gravity = Gravity.CENTER, color = white, topDp = 12)
         val spacer = android.view.View(this); root.addView(spacer, LinearLayout.LayoutParams(1, 0, 1f))
-        root.button("📞  Позвонить") { runCatching { startActivity(Allowed.dialIntent()) } }.id = R.id.btnCall
-        root.button("✉  SMS") { runCatching { startActivity(Allowed.smsIntent(this)) } }.id = R.id.btnSms
-        root.button("🚨  Экстренный вызов 112") { runCatching { startActivity(Allowed.dialIntent("112")) } }.apply {
+        root.button("📞  Позвонить") { launch(Allowed.dialIntent()) }.id = R.id.btnCall
+        root.button("✉  SMS") { launch(Allowed.smsIntent(this)) }.id = R.id.btnSms
+        root.button("🚨  Экстренный вызов 112") { launch(Allowed.dialIntent("112")) }.apply {
             id = R.id.btnSos; setBackgroundColor(ContextCompat.getColor(this@BlockActivity, R.color.danger))
         }
         root.button("Выйти из блокировки", style = 2) {
-            startActivity(Intent(this, ExitActivity::class.java).putExtra(ExitActivity.EXTRA_PURPOSE, ExitActivity.P_LOCK))
+            launch(Intent(this, ExitActivity::class.java).putExtra(ExitActivity.EXTRA_PURPOSE, ExitActivity.P_LOCK))
         }.apply { id = R.id.btnExit; setTextColor(white) }
         setContentView(root)
         handle(intent)
@@ -92,7 +95,11 @@ class BlockActivity : AppCompatActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         // Нажата «Домой»/«Недавние» в базовом режиме: вернуть экран (AccessibilityService сделает это мгновенно).
-        if (Store.get(this).state.locked && !Owner.maxProtection(this)) h.postDelayed({ if (Store.get(this).state.locked && !isFinishing) Guard.showBlock(this) }, 600)
+        if (Store.get(this).state.locked && !Owner.maxProtection(this) && SystemClock.uptimeMillis() - allowedLaunchAt > 3_000)
+            h.postDelayed({
+                val fg = Guard.foregroundPackage(this)
+                if (Store.get(this).state.locked && !isFinishing && !Allowed.isAllowedDuringLock(this, fg, Store.get(this).settings.whitelist)) Guard.showBlock(this)
+            }, 1_500)
     }
 
     companion object { const val ACTION_RELEASE = "com.example.screenlimit.RELEASE" }

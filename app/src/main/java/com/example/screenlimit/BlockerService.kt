@@ -24,6 +24,8 @@ class BlockerService : AccessibilityService() {
         running = true
         Guard.addListener(listener)
         GuardService.start(this)
+        // Служба спец. возможностей поднимается системой раньше BOOT_COMPLETED — восстанавливаем блокировку сразу.
+        if (Store.get(this).state.locked) android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ if (Store.get(this).state.locked) Guard.showBlock(this) }, 1_500)
     }
 
     override fun onAccessibilityEvent(e: AccessibilityEvent?) {
