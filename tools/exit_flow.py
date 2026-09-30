@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Проходит 10 подтверждений на эмуляторе. usage: exit_flow.py [choice-label]"""
 import subprocess, sys, re, time, os, xml.etree.ElementTree as ET
-SER=os.environ.get('SER','emulator-5556')
+SER=os.environ.get('SER','emulator-5554')
 A=['/home/box/Android/Sdk/platform-tools/adb','-s',SER]
 def sh(*a): return subprocess.run([*A,'shell',*a],capture_output=True,text=True,timeout=180).stdout
 def dump():

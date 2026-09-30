@@ -5,4 +5,7 @@
     <item name="btnRestOfDay" type="id" /><item name="btnDismiss" type="id" /><item name="usedToday" type="id" /><item name="remaining" type="id" />
     <item name="btnLimit" type="id" /><item name="mainScroll" type="id" /><item name="permCount" type="id" /><item name="btnOnboardDone" type="id" />
     <item name="ownerStatus" type="id" /><item name="btnRemoveOwner" type="id" />
+    <item name="allowedGrid" type="id" /><item name="allowedTitle" type="id" />
+    <item name="maxStatus" type="id" />
+    <item name="exitScroll" type="id" />
 </resources>

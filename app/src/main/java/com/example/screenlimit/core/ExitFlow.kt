@@ -71,6 +71,16 @@ class ExitFlow(
 
     fun cancel(): Result { phase = Phase.CANCELLED; return Result.Cancelled }
 
+    /**
+     * Восстановить прогресс после случайного пересоздания экрана (тот же seed → те же вопросы и фразы).
+     * Задержка шага отсчитывается заново, фраза шага по-прежнему обязательна.
+     */
+    fun restore(step: Int) {
+        if (phase != Phase.IN_PROGRESS) return
+        current = step.coerceIn(0, TOTAL - 1)
+        shownAt = Long.MIN_VALUE
+    }
+
     val completedCount: Int get() = if (phase == Phase.COMPLETED) TOTAL else current
 
     companion object {

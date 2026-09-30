@@ -25,7 +25,14 @@ class BlockerService : AccessibilityService() {
         Guard.addListener(listener)
         GuardService.start(this)
         // Служба спец. возможностей поднимается системой раньше BOOT_COMPLETED — восстанавливаем блокировку сразу.
-        if (Store.get(this).state.locked) android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ if (Store.get(this).state.locked) Guard.showBlock(this) }, 1_500)
+        // 1.0.1: не выбрасывать из разрешённого приложения, если служба просто переподключилась (перезапуск процесса и т.п.).
+        if (Store.get(this).state.locked) android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            val store = Store.get(this)
+            if (store.state.locked) {
+                val fg = runCatching { rootInActiveWindow?.packageName?.toString() }.getOrNull()
+                if (fg == null || fg == packageName || !Allowed.isAllowedDuringLock(this, fg, store.settings.whitelist) || Allowed.isNeutral(this, fg)) Guard.showBlock(this)
+            }
+        }, 1_500)
     }
 
     override fun onAccessibilityEvent(e: AccessibilityEvent?) {
@@ -33,16 +40,28 @@ class BlockerService : AccessibilityService() {
         val pkg = e.packageName?.toString() ?: return
         val type = e.eventType
         val isState = type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
-        if (isState && pkg != Allowed.ime(this) && pkg != "com.android.systemui") {
-            Guard.lastForeground = pkg; Guard.lastForegroundAt = System.currentTimeMillis()
-        }
         val store = Store.get(this)
         val locked = store.state.locked
         val s = store.settings
 
-        if (isState && pkg != "com.android.systemui" && pkg != Allowed.ime(this)) {
-            if (locked && !Allowed.isAllowedDuringLock(this, pkg, s.whitelist)) { showOverlay(); bounce(false); return }
-            if (pkg == packageName || !locked || Allowed.isAllowedDuringLock(this, pkg, s.whitelist)) hideOverlay()
+        if (isState) {
+            // 1.0.1: клавиатуры (любые установленные IME, включая «безопасные» OEM), systemui и наше собственное
+            // окно-заглушка НИКОГДА не считаются чужим приложением и не меняют «переднее приложение».
+            val neutral = Allowed.isNeutral(this, pkg) || isNeutralWindow(e.windowId)
+            if (BuildConfig.DEBUG) android.util.Log.d("SLA11y", "state pkg=$pkg cls=${e.className} neutral=$neutral locked=$locked " +
+                "exitAlive=${Guard.exitFlowAlive()} helperWin=${Guard.helperWindowOpen()} primary=${Guard.lastPrimary} win=${e.windowId}")
+            if (!neutral) {
+                Guard.lastForeground = pkg; Guard.lastForegroundAt = System.currentTimeMillis()
+                Guard.noteForeground(this, pkg, s.whitelist)
+                if (locked && !Allowed.isAllowedDuringLock(this, pkg, s.whitelist)) {
+                    // Экран подтверждений всё ещё resumed → это не смена приложения, а окно поверх (клавиатура
+                    // без сведений об окне, всплывающее окно). Не перекрывать экран подтверждений заглушкой.
+                    if (ExitActivity.resumed) { if (BuildConfig.DEBUG) android.util.Log.d("SLA11y", "ignore $pkg: exit flow resumed"); return }
+                    if (BuildConfig.DEBUG) android.util.Log.d("SLA11y", "BOUNCE $pkg")
+                    showOverlay(); bounce(false); return
+                }
+                hideOverlay()
+            }
         }
         // Защитные страницы: во время блокировки (Настройки и так запрещены, но whitelist мог их включить)
         // и в строгом режиме — всегда.
@@ -56,6 +75,17 @@ class BlockerService : AccessibilityService() {
                 bounce(true)
             }
         }
+    }
+
+    /** Окно события — клавиатура или наша заглушка (нужен flagRetrieveInteractiveWindows). */
+    private fun isNeutralWindow(windowId: Int): Boolean {
+        if (windowId < 0) return false
+        return runCatching {
+            windows.firstOrNull { it.id == windowId }?.type.let {
+                it == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD ||
+                    it == android.view.accessibility.AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY
+            }
+        }.getOrDefault(false)
     }
 
     private fun isSensitive(root: AccessibilityNodeInfo): Boolean {

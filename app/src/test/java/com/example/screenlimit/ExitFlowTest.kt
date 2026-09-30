@@ -85,4 +85,25 @@ class ExitFlowTest {
         val f = ExitFlow(11)
         assertTrue(pass(f, 0) >= 40_000)
     }
+
+    @Test fun restoreKeepsSameStepsAndStillRequiresDelayAndPhrase() {
+        val a = ExitFlow(777); var t = 0L
+        repeat(3) { a.onShown(t); t += 4_000; assertEquals(ExitFlow.Result.Advanced, a.confirm(t, a.step.phrase)) }
+        val b = ExitFlow(777); b.restore(a.current)
+        assertEquals(3, b.current); assertEquals(a.step, b.step)
+        b.onShown(t)
+        assertTrue(b.confirm(t + 100, b.step.phrase) is ExitFlow.Result.Rejected)          // задержка снова
+        if (b.step.phrase != null) assertTrue(b.confirm(t + 4_000, "не то") is ExitFlow.Result.Rejected)
+        assertEquals(ExitFlow.Result.Advanced, b.confirm(t + 4_000, b.step.phrase))
+        val c = ExitFlow(1); c.cancel(); c.restore(5); assertEquals(0, c.current)            // отменённый не восстанавливается
+    }
+
+    @Test fun exitProgressValidity() {
+        val p = ExitProgress("lock", 5, 4, savedElapsed = 1_000_000, savedWall = 0)
+        assertTrue(p.validFor("lock", 1_000_000 + 60_000))
+        assertFalse(p.validFor("settings", 1_000_000 + 60_000))
+        assertFalse(p.validFor("lock", 1_000_000 + ExitProgress.MAX_AGE_MS + 1))
+        assertFalse(p.validFor("lock", 500))                                              // перезагрузка
+        assertEquals(p, ExitProgress.fromJson(p.toJson()))
+    }
 }

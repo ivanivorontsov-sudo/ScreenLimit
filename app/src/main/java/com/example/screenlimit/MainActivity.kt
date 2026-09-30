@@ -134,9 +134,13 @@ class MainActivity : AppCompatActivity() {
                     text("Строгий режим", 16f, bold = true).weight()
                     addView(MaterialSwitch(context).apply { isChecked = s.strictMode; isEnabled = !locked; setOnCheckedChangeListener { _, v -> propose(s.copy(strictMode = v)) } })
                 }
-                text("Всегда (а не только во время блокировки) закрывает страницы настроек, через которые можно отключить или удалить «Стоп-экран».", 13f)
+                text("Всегда (а не только во время блокировки) закрывает страницы настроек, через которые можно отключить или удалить «Стоп-экран». На разрешённые приложения не влияет.", 13f)
                 button("Разрешённые приложения (${s.whitelist.size})", style = 1) { startActivity(Intent(this@MainActivity, WhitelistActivity::class.java)) }.isEnabled = !locked
-                button("Максимальная защита (владелец устройства)", style = 1) { startActivity(Intent(this@MainActivity, ProtectionActivity::class.java)) }.isEnabled = !locked
+                val maxOn = Owner.maxProtection(this@MainActivity)
+                text(if (maxOn) "🛡 Максимальная защита активна: владелец устройства, режим киоска во время паузы."
+                    else "Максимальная защита не активна: «Стоп-экран» не владелец устройства. Работают спец. возможности" +
+                        (if (Owner.isAdmin(this@MainActivity)) " и администратор устройства." else ".") , 13f, topDp = 8).id = R.id.maxStatus
+                button(if (maxOn) "Максимальная защита: включена" else "Максимальная защита: выключена (как включить)", style = 1) { startActivity(Intent(this@MainActivity, ProtectionActivity::class.java)) }.isEnabled = !locked
             }
 
             section("ПО ПРИЛОЖЕНИЯМ СЕГОДНЯ")
@@ -207,6 +211,7 @@ class MainActivity : AppCompatActivity() {
         if (why.isEmpty()) {
             store.settings = new
             store.log(HistoryEntry.SETTINGS, "Настройки изменены")
+            Owner.ensureLockPolicies(this, store.state.locked)
             Guard.tick(this, "settings"); render(true)
         } else {
             MaterialAlertDialogBuilder(this)

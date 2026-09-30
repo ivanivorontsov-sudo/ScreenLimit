@@ -11,12 +11,17 @@ import com.example.screenlimit.core.GuardState
  *   adb shell am broadcast -n com.example.screenlimit/.DebugReceiver --el warn_unit_ms 10000 --el limit_ms 120000
  *   adb shell am broadcast -n com.example.screenlimit/.DebugReceiver --ez reset_usage true
  *   adb shell am broadcast -n com.example.screenlimit/.DebugReceiver --ez clear_debug true
+ *   adb shell am broadcast -n com.example.screenlimit/.DebugReceiver --ez state true        (состояние экрана подтверждений, JSON)
+ *   adb shell am broadcast -n com.example.screenlimit/.DebugReceiver --ez clear_owner true  (снять Device Owner — только эмулятор)
  */
 class DebugReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, i: Intent) {
         val store = Store.get(ctx)
+        if (i.getBooleanExtra("state", false)) { resultData = Guard.debugStateSource?.invoke() ?: "{}"; return }
         i.getStringExtra("type")?.let { Guard.debugTypeSink?.invoke(it); resultData = "typed"; return }
         if (i.getBooleanExtra("clear_debug", false)) store.setDebug(0, 0)
+        // Только для тестов на эмуляторе: снять владельца устройства без 10 подтверждений (в release этого приёмника нет).
+        if (i.getBooleanExtra("clear_owner", false)) { resultData = "clear_owner=" + Owner.removeDeviceOwner(ctx); return }
         if (i.hasExtra("warn_unit_ms") || i.hasExtra("limit_ms"))
             store.setDebug(if (i.hasExtra("warn_unit_ms")) i.getLongExtra("warn_unit_ms", 0) else null,
                 if (i.hasExtra("limit_ms")) i.getLongExtra("limit_ms", 0) else null)

@@ -74,6 +74,14 @@ class Store private constructor(ctx: Context) {
         get() = p.getString(K_PENDING, null)?.let { runCatching { Settings.fromJson(JSONObject(it)) }.getOrNull() }
         set(v) { p.edit().apply { if (v == null) remove(K_PENDING) else putString(K_PENDING, v.toJson().toString()) }.commit() }
 
+    /**
+     * Прогресс экрана подтверждений (1.0.1+, аддитивный ключ): случайный перезапуск экрана возвращает на тот же шаг.
+     * Действителен [ExitProgress.MAX_AGE_MS] с момента последнего сохранения и только до перезагрузки.
+     */
+    var exitProgress: ExitProgress?
+        get() = p.getString(K_EXIT_PROGRESS, null)?.let { runCatching { ExitProgress.fromJson(JSONObject(it)) }.getOrNull() }
+        set(v) { p.edit().apply { if (v == null) remove(K_EXIT_PROGRESS) else putString(K_EXIT_PROGRESS, v.toJson().toString()) }.commit() }
+
     // --- Только для debug-сборки (adb broadcast). В release не читаются. ---
     fun engineConfig(): EngineConfig {
         if (!BuildConfig.DEBUG) return EngineConfig()
@@ -101,11 +109,27 @@ class Store private constructor(ctx: Context) {
         const val K_OWNER_PROTECTION = "sl_owner_protection"
         const val K_BLOCK_ADB = "sl_block_adb_during_lock"
         const val K_PENDING = "sl_pending_settings"
+        const val K_EXIT_PROGRESS = "sl_exit_progress"   // 1.0.1
         const val K_DBG_WARN_UNIT = "sl_debug_warn_unit_ms"
         const val K_DBG_LIMIT_MS = "sl_debug_limit_ms"
         const val MAX_HISTORY = 2000
 
         @Volatile private var inst: Store? = null
         fun get(ctx: Context): Store = inst ?: synchronized(this) { inst ?: Store(ctx.applicationContext).also { inst = it } }
+    }
+}
+
+data class ExitProgress(val purpose: String, val seed: Long, val step: Int, val savedElapsed: Long, val savedWall: Long) {
+    fun toJson(): JSONObject = JSONObject().put("purpose", purpose).put("seed", seed).put("step", step)
+        .put("savedElapsed", savedElapsed).put("savedWall", savedWall)
+
+    /** Годен ли для восстановления: та же цель, не старше MAX_AGE_MS, без перезагрузки между сохранением и сейчас. */
+    fun validFor(purpose: String, nowElapsed: Long): Boolean =
+        purpose == this.purpose && nowElapsed >= savedElapsed && nowElapsed - savedElapsed <= MAX_AGE_MS
+
+    companion object {
+        const val MAX_AGE_MS = 3 * 60_000L   // = ExitFlow.STEP_TIMEOUT_MS
+        fun fromJson(o: JSONObject) = ExitProgress(o.getString("purpose"), o.getLong("seed"), o.optInt("step", 0),
+            o.optLong("savedElapsed", 0), o.optLong("savedWall", 0))
     }
 }

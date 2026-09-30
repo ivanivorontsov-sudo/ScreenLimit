@@ -8,3 +8,6 @@
 .externalNativeBuild
 .cxx
 /app/build
+/tools/testapp/build
+/tools/testapp/.gradle
+/tools/testapp/local.properties

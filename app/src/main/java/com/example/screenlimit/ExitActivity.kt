@@ -11,6 +11,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
@@ -29,23 +30,47 @@ import java.security.SecureRandom
 class ExitActivity : AppCompatActivity() {
     private lateinit var flow: ExitFlow
     private lateinit var purpose: String
+    private var seed = 0L
     private val h = Handler(Looper.getMainLooper())
+    private var programmaticText = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         supportActionBar?.hide()
         purpose = intent.getStringExtra(EXTRA_PURPOSE) ?: P_LOCK
-        flow = ExitFlow(SecureRandom().nextLong(), delayMs = delay())
+        val store = Store.get(this)
+        // Случайное пересоздание экрана (клавиатура/системный диалог/возврат сторожем/смерть процесса) не сбрасывает прогресс.
+        val saved = store.exitProgress?.takeIf {
+            it.validFor(purpose, SystemClock.elapsedRealtime()) && (purpose != P_LOCK || store.state.locked) &&
+                (purpose != P_SETTINGS || store.pendingSettings != null)
+        }
+        seed = saved?.seed ?: SecureRandom().nextLong()
+        flow = ExitFlow(seed, delayMs = delay())
+        saved?.let { flow.restore(it.step) }
+        Guard.exitFlowRef = java.lang.ref.WeakReference(this)
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) { override fun handleOnBackPressed() = cancel() })
         showStep()
     }
 
     private fun delay(): Long = if (BuildConfig.DEBUG && intent.getBooleanExtra("fast", false)) 1_000L else ExitFlow.DEFAULT_DELAY_MS
 
+    private fun saveProgress() {
+        val store = Store.get(this)
+        val old = store.exitProgress
+        // Тот же шаг после восстановления — время не обновляем (восстановление не продлевает тайм-аут шага).
+        if (old != null && old.seed == seed && old.step == flow.current && old.purpose == purpose) return
+        store.exitProgress = ExitProgress(purpose, seed, flow.current, SystemClock.elapsedRealtime(), System.currentTimeMillis())
+    }
+
+    private fun forgetFlow() {
+        Store.get(this).exitProgress = null
+        if (Guard.exitFlowRef?.get() === this) Guard.exitFlowRef = null
+    }
+
     private fun cancel() {
         flow.cancel()
         h.removeCallbacksAndMessages(null)
-        Guard.exitFlowVisible = false
+        forgetFlow()
         if (purpose == P_LOCK && Store.get(this).state.locked) Guard.showBlock(this)
         finish()
     }
@@ -53,9 +78,14 @@ class ExitActivity : AppCompatActivity() {
     private fun showStep() {
         h.removeCallbacksAndMessages(null)
         val step = flow.step
-        val frame = FrameLayout(this)
-        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(28), dp(20), dp(20)) }
-        frame.addView(col, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        saveProgress()
+        // 1.0.1: всё — одной прокручиваемой колонкой. Раньше кнопки лежали в FrameLayout поверх колонки
+        // (gravity CENTER/BOTTOM + отступы) и при открытии клавиатуры (adjustResize) съезжали ПРЯМО НА поле фразы:
+        // касание поля попадало в «Отмена — остаться» → выход отменялся → экран блокировки.
+        val frame = ScrollView(this).apply { isFillViewport = true; id = R.id.exitScroll }
+        // Нижний запас — чтобы кнопки можно было прокрутить выше полосы подсказок клавиатуры.
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(28), dp(20), dp(96)) }
+        frame.addView(col, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         col.text(purposeTitle(), 14f, color = getColor(R.color.primary), bold = true)
         col.text("Подтверждение ${step.index + 1} из ${ExitFlow.TOTAL}", 20f, bold = true, topDp = 6).id = R.id.stepCounter
         val pb = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = ExitFlow.TOTAL; progress = step.index }
@@ -68,31 +98,48 @@ class ExitActivity : AppCompatActivity() {
             val til = TextInputLayout(this, null, com.google.android.material.R.attr.textInputOutlinedStyle).apply { hint = "Фраза" }
             input = TextInputEditText(til.context).apply {
                 id = R.id.stepPhrase
-                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                // 1.0.1: обычное текстовое поле (НЕ пароль): поля паролей вызывают на части телефонов отдельную
+                // «безопасную клавиатуру» OEM и латинскую раскладку. Подсказки и обучение клавиатуры выключены.
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE or android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI or android.view.inputmethod.EditorInfo.IME_FLAG_NO_FULLSCREEN or
+                    android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
                 isLongClickable = false; setTextIsSelectable(false)   // без вставки из буфера
                 customInsertionActionModeCallback = NoPaste; customSelectionActionModeCallback = NoPaste
+                // Вставка через панель буфера обмена клавиатуры: не принимаем вставку длиннее слова за один раз.
+                filters = arrayOf(android.text.InputFilter { src, st, en, _, _, _ -> if (!programmaticText && en - st > MAX_INSERT) "" else null })
             }
             til.addView(input)
             col.addView(til, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) })
         }
         val err = col.text("", 14f, color = getColor(R.color.danger), topDp = 8)
-        if (BuildConfig.DEBUG) input?.let { et -> Guard.debugTypeSink = { t -> h.post { et.setText(t) } } }
+        if (BuildConfig.DEBUG) input?.let { et -> Guard.debugTypeSink = { t -> h.post { programmaticText = true; et.setText(t); programmaticText = false } } }
 
-        // Кнопки: позиция меняется от шага к шагу (верх/низ, слева/справа, порядок).
+        // Кнопки: позиция меняется от шага к шагу (отступ сверху, слева/справа, порядок), но всегда ПОД полем ввода.
         val btns = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val confirm = MaterialButton(this).apply { id = R.id.btnConfirm; isAllCaps = false; isEnabled = false }
+        if (BuildConfig.DEBUG) Guard.debugStateSource = { debugState(step, input, confirm) }
         val cancelBtn = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
             id = R.id.btnCancel; isAllCaps = false; text = "Отмена — остаться"; setOnClickListener { cancel() }
         }
         val lpBtn = { LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(4); marginEnd = dp(4) } }
         if (step.confirmFirst) { btns.addView(confirm, lpBtn()); btns.addView(cancelBtn, lpBtn()) } else { btns.addView(cancelBtn, lpBtn()); btns.addView(confirm, lpBtn()) }
-        val grav = when (step.position) { 0 -> Gravity.BOTTOM; 1 -> Gravity.CENTER_VERTICAL; 2 -> Gravity.BOTTOM; else -> Gravity.CENTER_VERTICAL }
         val side = if (step.position >= 2) dp(40) else 0
-        frame.addView(btns, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, grav).apply {
-            bottomMargin = dp(if (step.position == 2) 120 else 32); topMargin = dp(if (grav == Gravity.CENTER_VERTICAL) 220 else 0)
-            marginStart = if (step.position == 3) side else dp(16); marginEnd = if (step.position == 2) side else dp(16)
+        col.addView(btns, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(if (step.phrase != null) when (step.position) { 0 -> 12; 1 -> 28; 2 -> 44; else -> 20 }
+                else when (step.position) { 0 -> 16; 1 -> 64; 2 -> 112; else -> 40 })
+            marginStart = if (step.position == 3) side else 0; marginEnd = if (step.position == 2) side else 0
         })
         setContentView(frame)
+        // Клавиатура открыта (поле в фокусе) → прокрутить так, чтобы кнопки были видны над клавиатурой, не пряча поле.
+        input?.let { et ->
+            frame.viewTreeObserver.addOnGlobalLayoutListener {
+                if (!et.hasFocus()) return@addOnGlobalLayoutListener
+                val til = et.parent?.parent as? View ?: et
+                val want = btns.bottom + dp(72) - frame.height
+                val target = minOf(want, til.top - dp(8)).coerceAtLeast(0)
+                if (target > frame.scrollY) frame.scrollTo(0, target)
+            }
+        }
 
         flow.onShown(SystemClock.uptimeMillis())
         val tick = object : Runnable {
@@ -113,6 +160,14 @@ class ExitActivity : AppCompatActivity() {
         }
     }
 
+    private fun debugState(step: ExitFlow.Step, input: TextInputEditText?, confirm: MaterialButton): String {
+        fun b(v: View): String { val l = IntArray(2); v.getLocationOnScreen(l); return "[${l[0]},${l[1]},${l[0] + v.width},${l[1] + v.height}]" }
+        return org.json.JSONObject().put("step", step.index + 1).put("phrase", step.phrase ?: "")
+            .put("typed", input?.text?.toString() ?: "").put("field", input?.let { b(it) } ?: "")
+            .put("focused", input?.hasFocus() == true).put("confirm", b(confirm)).put("enabled", confirm.isEnabled)
+            .put("resumed", resumed).put("alive", Guard.exitFlowAlive()).toString()
+    }
+
     private fun purposeTitle() = when (purpose) {
         P_SETTINGS -> "Ослабление настроек"
         P_OWNER -> "Снятие максимальной защиты"
@@ -126,16 +181,18 @@ class ExitActivity : AppCompatActivity() {
         when (purpose) {
             P_LOCK -> showChoice()
             P_SETTINGS -> {
+                forgetFlow()
                 val p = store.pendingSettings
                 if (p != null && !store.state.locked) {
                     store.settings = p; store.pendingSettings = null
                     store.log(HistoryEntry.SETTINGS, "Настройки ослаблены после 10 подтверждений")
                     Guard.tick(this, "settings")
+                    Owner.ensureLockPolicies(this, store.state.locked)   // список Lock Task = новый список разрешённых
                 }
                 finish()
             }
-            P_OWNER -> { Owner.removeDeviceOwner(this); finish() }
-            P_ADMIN -> { Owner.removeAdmin(this); finish() }
+            P_OWNER -> { forgetFlow(); Owner.removeDeviceOwner(this); finish() }
+            P_ADMIN -> { forgetFlow(); Owner.removeAdmin(this); finish() }
         }
     }
 
@@ -152,13 +209,21 @@ class ExitActivity : AppCompatActivity() {
     }
 
     private fun exit(c: ExitChoice) {
+        forgetFlow()
         Guard.grantExit(this, c)
         finish()
     }
 
-    override fun onResume() { super.onResume(); Guard.exitFlowVisible = true }
-    override fun onPause() { super.onPause(); Guard.exitFlowVisible = false }
-    override fun onDestroy() { h.removeCallbacksAndMessages(null); Guard.debugTypeSink = null; super.onDestroy() }
+    // 1.0.1: onPause больше НЕ снимает защиту экрана подтверждений (клавиатура, выбор клавиатуры, системные диалоги
+    // могут ставить активность на паузу). Экран считается «живым» до onDestroy — см. Guard.exitFlowAlive().
+    override fun onResume() { super.onResume(); resumed = true; Guard.exitFlowRef = java.lang.ref.WeakReference(this) }
+    override fun onPause() { super.onPause(); resumed = false }
+    override fun onDestroy() {
+        h.removeCallbacksAndMessages(null)
+        if (Guard.exitFlowRef?.get() === this) { Guard.exitFlowRef = null; resumed = false }
+        Guard.debugTypeSink = null; Guard.debugStateSource = null
+        super.onDestroy()
+    }
 
     private object NoPaste : android.view.ActionMode.Callback {
         override fun onCreateActionMode(m: android.view.ActionMode?, menu: android.view.Menu?) = false
@@ -173,5 +238,7 @@ class ExitActivity : AppCompatActivity() {
         const val P_SETTINGS = "settings"
         const val P_OWNER = "owner"
         const val P_ADMIN = "admin"
+        const val MAX_INSERT = 12
+        @Volatile var resumed = false
     }
 }

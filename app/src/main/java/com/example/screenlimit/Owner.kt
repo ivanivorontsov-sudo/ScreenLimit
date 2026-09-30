@@ -52,14 +52,25 @@ object Owner {
     private val DURING_LOCK = listOf(UserManager.DISALLOW_CONFIG_DATE_TIME, UserManager.DISALLOW_APPS_CONTROL,
         UserManager.DISALLOW_INSTALL_APPS, UserManager.DISALLOW_UNINSTALL_APPS)
 
-    /** Идемпотентно применяет политики владельца для текущего состояния. */
+    @Volatile private var appliedSig = ""
+    @Volatile private var appliedAt = 0L
+
+    /**
+     * Идемпотентно применяет политики владельца для текущего состояния. Вызывается на каждом тике во время паузы,
+     * поэтому (1.0.1) повторно обращается к DevicePolicyManager только если что-то изменилось (список Lock Task —
+     * разрешённые приложения + помощники, флаг паузы, настройки) или раз в 10 минут.
+     */
     fun ensureLockPolicies(ctx: Context, locked: Boolean) {
         if (!isDeviceOwner(ctx)) return
         val dpm = dpm(ctx); val a = admin(ctx)
-        val on = Store.get(ctx).ownerProtection
+        val store = Store.get(ctx)
+        val on = store.ownerProtection
+        val pkgs = if (on) Allowed.lockTaskPackages(ctx, store.settings.whitelist) else arrayOf(ctx.packageName)
+        val sig = "$on|$locked|${store.blockAdbDuringLock}|${pkgs.sorted().joinToString(",")}"
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (sig == appliedSig && now - appliedAt < 10 * 60_000L) return
         runCatching {
-            val wl = Store.get(ctx).settings.whitelist
-            dpm.setLockTaskPackages(a, if (on) Allowed.lockTaskPackages(ctx, wl) else arrayOf(ctx.packageName))
+            dpm.setLockTaskPackages(a, pkgs)
             if (Build.VERSION.SDK_INT >= 28) dpm.setLockTaskFeatures(a,
                 DevicePolicyManager.LOCK_TASK_FEATURE_SYSTEM_INFO or DevicePolicyManager.LOCK_TASK_FEATURE_KEYGUARD or
                     DevicePolicyManager.LOCK_TASK_FEATURE_GLOBAL_ACTIONS or DevicePolicyManager.LOCK_TASK_FEATURE_HOME or
@@ -71,6 +82,7 @@ object Owner {
             val adb = UserManager.DISALLOW_DEBUGGING_FEATURES
             if (on && locked && Store.get(ctx).blockAdbDuringLock) dpm.addUserRestriction(a, adb) else dpm.clearUserRestriction(a, adb)
             // Разрешаем только наш сервис спец. возможностей? Нет — это отключило бы сервисы для людей с ОВЗ.
+            appliedSig = sig; appliedAt = now
         }.onFailure { Log.w(TAG, "ensureLockPolicies", it) }
     }
 
@@ -83,6 +95,7 @@ object Owner {
             dpm.setUninstallBlocked(a, ctx.packageName, false)
             if (Build.VERSION.SDK_INT >= 30) dpm.setUserControlDisabledPackages(a, emptyList())
             dpm.setLockTaskPackages(a, arrayOf())
+            appliedSig = ""
             @Suppress("DEPRECATION") dpm.clearDeviceOwnerApp(ctx.packageName)
             Store.get(ctx).log(HistoryEntry.OWNER, "Режим владельца устройства снят (после 10 подтверждений)")
             true

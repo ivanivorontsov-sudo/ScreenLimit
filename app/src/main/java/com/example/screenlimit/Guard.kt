@@ -34,8 +34,45 @@ object Guard {
 
     /** Только debug: ввод кириллицы в поле фразы из adb-теста (adb input text не умеет кириллицу). */
     @Volatile var debugTypeSink: ((String) -> Unit)? = null
-    @Volatile var lastForeground: String? = null      // от AccessibilityService
+    /** Только debug: состояние экрана подтверждений для тестов (без uiautomator, который отключает AccessibilityService). */
+    @Volatile var debugStateSource: (() -> String)? = null
+    @Volatile var lastForeground: String? = null      // от AccessibilityService (без клавиатур и systemui)
     @Volatile var lastForegroundAt: Long = 0
+
+    // ---------- Разрешённые приложения и «окно помощников» ----------
+    /** Сколько после разрешённого приложения допускаются его «помощники» (браузер/Custom Tabs, GMS, выбор приложения, камера…). */
+    const val HELPER_WINDOW_MS = 2 * 60_000L
+    /** Последнее «основное» (не клавиатура/systemui и не помощник) приложение на переднем плане. */
+    @Volatile var lastPrimary: String? = null
+    @Volatile private var lastPrimaryIsAllowedApp = false
+    /** Когда (elapsedRealtime) разрешённое приложение последний раз было на переднем плане / запущено с экрана блокировки. */
+    @Volatile var lastAllowedAppAt = 0L
+
+    /**
+     * Учёт переднего плана для окна помощников. Помощник допускается, только если перед ним было
+     * разрешённое приложение (а не экран блокировки, лаунчер и т.п.) и прошло не больше [HELPER_WINDOW_MS].
+     */
+    fun noteForeground(ctx: Context, pkg: String, whitelist: Set<String>) {
+        if (Allowed.isNeutral(ctx, pkg)) return
+        val inList = pkg in whitelist
+        if (!inList && Allowed.isHelper(ctx, pkg)) return            // помощник не меняет «основное» приложение
+        val allowedApp = inList || (pkg != ctx.packageName && pkg != "android" && Allowed.isBaseAllowed(ctx, pkg))
+        lastPrimary = pkg; lastPrimaryIsAllowedApp = allowedApp
+        if (allowedApp) lastAllowedAppAt = SystemClock.elapsedRealtime()
+    }
+
+    /** Запуск разрешённого приложения с экрана блокировки. */
+    fun noteAllowedLaunch(pkg: String) {
+        lastPrimary = pkg; lastPrimaryIsAllowedApp = true; lastAllowedAppAt = SystemClock.elapsedRealtime()
+    }
+
+    fun helperWindowOpen(): Boolean =
+        lastPrimaryIsAllowedApp && lastAllowedAppAt > 0 && SystemClock.elapsedRealtime() - lastAllowedAppAt < HELPER_WINDOW_MS
+
+    // ---------- Экран подтверждений ----------
+    /** Живой экран подтверждений (создан и не уничтожен) — в любом состоянии: resumed, paused (клавиатура, диалог), stopped. */
+    @Volatile var exitFlowRef: java.lang.ref.WeakReference<android.app.Activity>? = null
+    fun exitFlowAlive(): Boolean = exitFlowRef?.get()?.let { !it.isFinishing && !it.isDestroyed } == true
     private var lastTamperLog = 0L
     private val listeners = mutableSetOf<() -> Unit>()
 
@@ -81,6 +118,8 @@ object Guard {
         if (r.state.locked) {
             // Страховка без Accessibility: если открыто запрещённое приложение — вернуть экран блокировки.
             if (fg != null && !Allowed.isAllowedDuringLock(ctx, fg, s.whitelist) && !BlockerService.running) showBlock(ctx)
+            // Помощник (браузер, GMS, камера…) после окончания окна — вернуть экран блокировки.
+            else if (fg != null && Allowed.isHelper(ctx, fg) && !Allowed.isAllowedDuringLock(ctx, fg, s.whitelist)) showBlock(ctx)
             if (r.events.none { it is EngineEvent.Locked }) Owner.ensureLockPolicies(ctx, true)
         }
         scheduleWake(ctx, Engine.nextWakeDelay(s, r.state, r.trustedNow, input.zone, counting, cfg))
@@ -115,6 +154,8 @@ object Guard {
 
     private fun onLockReleased(ctx: Context) {
         Owner.ensureLockPolicies(ctx, false)
+        val store = Store.get(ctx)
+        if (store.exitProgress?.purpose == ExitActivity.P_LOCK) store.exitProgress = null
         val am = ctx.getSystemService(ActivityManager::class.java)
         if (am.lockTaskModeState != ActivityManager.LOCK_TASK_MODE_NONE) {
             ctx.startActivity(Intent(ctx, BlockActivity::class.java).setAction(BlockActivity.ACTION_RELEASE)
@@ -122,11 +163,19 @@ object Guard {
         }
     }
 
-    /** Экран подтверждений открыт и активен — не перебивать его экраном блокировки. */
-    @Volatile var exitFlowVisible = false
-
     fun showBlock(ctx: Context) {
-        if (exitFlowVisible) return
+        // Идёт выход из блокировки: не уничтожать экран подтверждений (BlockActivity — singleTask и закрыл бы его),
+        // а вернуть его самого на передний план — на том же шаге.
+        val ex = exitFlowRef?.get()
+        if (ex != null && !ex.isFinishing && !ex.isDestroyed) {
+            if (ExitActivity.resumed) return
+            if (BuildConfig.DEBUG) Log.d(TAG, "showBlock -> bring exit flow to front")
+            runCatching {
+                ctx.startActivity(Intent(ctx, ExitActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+            }.onFailure { Log.w(TAG, "bring exit flow", it) }
+            return
+        }
         if (BuildConfig.DEBUG) Log.d(TAG, "showBlock from " + Throwable().stackTrace.drop(1).take(2).joinToString(" <- ") { it.className.substringAfterLast('.') + "." + it.methodName })
         runCatching {
             ctx.startActivity(Intent(ctx, BlockActivity::class.java)

@@ -18,7 +18,7 @@ class ProtectionActivity : AppCompatActivity() {
         val store = Store.get(this)
         scrollPage {
             card {
-                text(if (owner) "🛡 Включено: «Стоп-экран» — владелец устройства" else "Сейчас: базовый режим", 17f, bold = true).id = R.id.ownerStatus
+                text(if (owner) "🛡 Включено: «Стоп-экран» — владелец устройства" else "Сейчас: базовый режим — максимальная защита НЕ активна (нужен владелец устройства, см. ниже). Работают спец. возможности и администратор устройства (если включён); строгий режим — отдельная настройка на главном экране.", 17f, bold = true).id = R.id.ownerStatus
                 text(if (Owner.isAdmin(this@ProtectionActivity)) "Администратор устройства: включён" else "Администратор устройства: выключен", 14f)
             }
             section("ЧТО ДАЁТ")
