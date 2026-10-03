@@ -124,7 +124,12 @@ class BlockerService : AccessibilityService() {
         if (overlay != null) return
         val wm = getSystemService(android.view.WindowManager::class.java)
         val v = android.view.LayoutInflater.from(this).inflate(R.layout.overlay_block, null)
-        v.findViewById<android.view.View>(R.id.ovOpen).setOnClickListener { Guard.showBlock(this) }
+        // 1.0.2 fix: кнопка «Открыть экран блокировки» раньше вызывала только showBlock, но НЕ убирала
+        // саму заглушку. Экран блокировки уже лежит под ней (запущен при показе заглушки), поэтому новое
+        // окно-состояние не менялось и слушатель спец.возможностей не вызывал hideOverlay — непрозрачная
+        // заглушка оставалась сверху и казалось, что кнопка «не работает» (а «Позвонить»/«SMS» срабатывали,
+        // потому что они сами звали hideOverlay). Теперь кнопка тоже снимает заглушку сразу.
+        v.findViewById<android.view.View>(R.id.ovOpen).setOnClickListener { hideOverlay(); Guard.showBlock(this) }
         v.findViewById<android.view.View>(R.id.ovCall).setOnClickListener { hideOverlay(); runCatching { startActivity(Allowed.dialIntent()) } }
         v.findViewById<android.view.View>(R.id.ovSms).setOnClickListener { hideOverlay(); runCatching { startActivity(Allowed.smsIntent(this)) } }
         val lp = android.view.WindowManager.LayoutParams(

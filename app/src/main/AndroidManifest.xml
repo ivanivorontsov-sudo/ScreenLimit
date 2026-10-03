@@ -47,6 +47,11 @@
         <activity android:name=".OnboardingActivity" android:exported="false" />
         <activity android:name=".WhitelistActivity" android:exported="false" />
         <activity android:name=".ProtectionActivity" android:exported="false" />
+        <activity
+            android:name=".PasswordActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:windowSoftInputMode="adjustResize" />
 
         <activity
             android:name=".BlockActivity"

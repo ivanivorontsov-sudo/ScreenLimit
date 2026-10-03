@@ -5,9 +5,12 @@ import android.content.SharedPreferences
 import com.example.screenlimit.core.EngineConfig
 import com.example.screenlimit.core.GuardState
 import com.example.screenlimit.core.HistoryEntry
+import com.example.screenlimit.core.Passcode
 import com.example.screenlimit.core.Settings
 import org.json.JSONArray
 import org.json.JSONObject
+import android.os.SystemClock
+import android.util.Base64
 
 /**
  * Единственное хранилище приложения. ПРАВИЛА (см. README «Обновления и данные»):
@@ -82,6 +85,65 @@ class Store private constructor(ctx: Context) {
         get() = p.getString(K_EXIT_PROGRESS, null)?.let { runCatching { ExitProgress.fromJson(JSONObject(it)) }.getOrNull() }
         set(v) { p.edit().apply { if (v == null) remove(K_EXIT_PROGRESS) else putString(K_EXIT_PROGRESS, v.toJson().toString()) }.commit() }
 
+    // ---- Пароль защиты настроек (1.0.2). Аддитивные ключи, миграция не нужна. ----
+    // Хранится только PBKDF2-SHA256(пароль, соль) + соль; открытого пароля нет. Отдельно — хеш кода восстановления.
+    @Synchronized fun isPasswordSet(): Boolean = p.contains(K_PW_HASH) && p.contains(K_PW_SALT)
+
+    /**
+     * Задать (или сменить) пароль защиты настроек. Возвращает НОВЫЙ код восстановления — он показывается
+     * пользователю один раз и больше нигде не хранится в открытом виде. Сбрасывает счётчик неверных попыток.
+     */
+    @Synchronized fun setPassword(password: String): String {
+        val salt = Passcode.newSalt()
+        val hash = Passcode.hash(password, salt)
+        val recovery = Passcode.newRecoveryCode()
+        val recSalt = Passcode.newSalt()
+        val recHash = Passcode.hash(Passcode.normalizeRecovery(recovery), recSalt)
+        p.edit()
+            .putString(K_PW_HASH, b64(hash)).putString(K_PW_SALT, b64(salt)).putInt(K_PW_ITERS, Passcode.ITERATIONS)
+            .putString(K_REC_HASH, b64(recHash)).putString(K_REC_SALT, b64(recSalt))
+            .putInt(K_PW_FAILS, 0).putLong(K_PW_LOCK_UNTIL, 0)
+            .commit()
+        return recovery
+    }
+
+    @Synchronized fun verifyPassword(password: String): Boolean {
+        val hash = p.getString(K_PW_HASH, null)?.let(::unb64) ?: return false
+        val salt = p.getString(K_PW_SALT, null)?.let(::unb64) ?: return false
+        val iters = p.getInt(K_PW_ITERS, Passcode.ITERATIONS)
+        return Passcode.verify(password, salt, hash, iters)
+    }
+
+    @Synchronized fun verifyRecovery(code: String): Boolean {
+        val hash = p.getString(K_REC_HASH, null)?.let(::unb64) ?: return false
+        val salt = p.getString(K_REC_SALT, null)?.let(::unb64) ?: return false
+        return Passcode.verify(Passcode.normalizeRecovery(code), salt, hash)
+    }
+
+    /** Сколько ещё миллисекунд действует блокировка ввода пароля (0 — можно вводить). Устойчиво к перезагрузке. */
+    @Synchronized fun pwLockRemainingMs(): Long {
+        val until = p.getLong(K_PW_LOCK_UNTIL, 0)
+        val rem = until - SystemClock.elapsedRealtime()
+        return if (rem in 1..Passcode.MAX_COOLDOWN_MS) rem else 0L
+    }
+
+    @get:Synchronized val pwFailCount: Int get() = p.getInt(K_PW_FAILS, 0)
+
+    /** Зафиксировать неверную попытку; при достижении порога включить эскалирующую паузу. Возвращает паузу (мс). */
+    @Synchronized fun recordPwFail(): Long {
+        val fails = pwFailCount + 1
+        val cd = Passcode.cooldownMsForFails(fails)
+        p.edit().putInt(K_PW_FAILS, fails)
+            .putLong(K_PW_LOCK_UNTIL, if (cd > 0) SystemClock.elapsedRealtime() + cd else 0L)
+            .commit()
+        return cd
+    }
+
+    @Synchronized fun resetPwFails() { p.edit().putInt(K_PW_FAILS, 0).putLong(K_PW_LOCK_UNTIL, 0).commit() }
+
+    private fun b64(bytes: ByteArray): String = Base64.encodeToString(bytes, Base64.NO_WRAP)
+    private fun unb64(s: String): ByteArray = Base64.decode(s, Base64.NO_WRAP)
+
     // --- Только для debug-сборки (adb broadcast). В release не читаются. ---
     fun engineConfig(): EngineConfig {
         if (!BuildConfig.DEBUG) return EngineConfig()
@@ -110,6 +172,13 @@ class Store private constructor(ctx: Context) {
         const val K_BLOCK_ADB = "sl_block_adb_during_lock"
         const val K_PENDING = "sl_pending_settings"
         const val K_EXIT_PROGRESS = "sl_exit_progress"   // 1.0.1
+        const val K_PW_HASH = "sl_pw_hash"               // 1.0.2
+        const val K_PW_SALT = "sl_pw_salt"
+        const val K_PW_ITERS = "sl_pw_iters"
+        const val K_REC_HASH = "sl_pw_recovery_hash"
+        const val K_REC_SALT = "sl_pw_recovery_salt"
+        const val K_PW_FAILS = "sl_pw_fail_count"
+        const val K_PW_LOCK_UNTIL = "sl_pw_lock_until_elapsed"
         const val K_DBG_WARN_UNIT = "sl_debug_warn_unit_ms"
         const val K_DBG_LIMIT_MS = "sl_debug_limit_ms"
         const val MAX_HISTORY = 2000

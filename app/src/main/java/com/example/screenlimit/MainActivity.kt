@@ -143,6 +143,15 @@ class MainActivity : AppCompatActivity() {
                 button(if (maxOn) "Максимальная защита: включена" else "Максимальная защита: выключена (как включить)", style = 1) { startActivity(Intent(this@MainActivity, ProtectionActivity::class.java)) }.isEnabled = !locked
             }
 
+            section("ПАРОЛЬ ЗАЩИТЫ НАСТРОЕК")
+            card {
+                val pwSet = store.isPasswordSet()
+                text(if (pwSet) "🔑 Пароль задан. Ослабление ограничений (увеличить лимит, добавить приложения, выключить защиту) требует пароль, а затем 10 подтверждений. Ужесточение — без пароля."
+                    else "Пароль не задан. Задайте его, чтобы ослабление ограничений было возможно только с паролем. Пароль задаёт и хранит другой человек — пользователю его знать не нужно.", 14f)
+                if (!pwSet) button("Задать пароль", style = 1) { PasswordActivity.startSet(this@MainActivity) }.isEnabled = !locked
+                else button("Сменить пароль", style = 1) { PasswordActivity.startChange(this@MainActivity) }.isEnabled = !locked
+            }
+
             section("ПО ПРИЛОЖЕНИЯМ СЕГОДНЯ")
             card { appBreakdown(this, st.periodStart) }
 
@@ -214,12 +223,14 @@ class MainActivity : AppCompatActivity() {
             Owner.ensureLockPolicies(this, store.state.locked)
             Guard.tick(this, "settings"); render(true)
         } else {
+            val pwSet = store.isPasswordSet()
+            val tail = if (pwSet) "ввести пароль и пройти 10 подтверждений" else "пройти 10 подтверждений"
             MaterialAlertDialogBuilder(this)
                 .setTitle("Это ослабление ограничений")
-                .setMessage("Изменение (${why.joinToString(", ")}) делает ограничения мягче. Чтобы применить его, нужно пройти 10 подтверждений.")
-                .setPositiveButton("Пройти 10 подтверждений") { _, _ ->
+                .setMessage("Изменение (${why.joinToString(", ")}) делает ограничения мягче. Чтобы применить его, нужно $tail.")
+                .setPositiveButton(if (pwSet) "Ввести пароль" else "Пройти 10 подтверждений") { _, _ ->
                     store.pendingSettings = new
-                    startActivity(Intent(this, ExitActivity::class.java).putExtra(ExitActivity.EXTRA_PURPOSE, ExitActivity.P_SETTINGS))
+                    PasswordActivity.startGate(this, ExitActivity.P_SETTINGS)
                 }
                 .setNegativeButton("Отмена") { _, _ -> render(true) }
                 .setOnCancelListener { render(true) }

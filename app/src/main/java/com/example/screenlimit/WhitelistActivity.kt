@@ -48,11 +48,13 @@ class WhitelistActivity : AppCompatActivity() {
             store.settings = new; store.log(HistoryEntry.SETTINGS, "Список разрешённых приложений сокращён")
             Owner.ensureLockPolicies(this, store.state.locked); finish(); return
         }
+        val pwSet = store.isPasswordSet()
+        val tail = if (pwSet) "Потребуются пароль и 10 подтверждений." else "Пройти 10 подтверждений?"
         MaterialAlertDialogBuilder(this).setTitle("Расширение списка")
-            .setMessage("Добавление приложений в разрешённые ослабляет блокировку. Пройти 10 подтверждений?")
-            .setPositiveButton("Пройти") { _, _ ->
+            .setMessage("Добавление приложений в разрешённые ослабляет блокировку. $tail")
+            .setPositiveButton(if (pwSet) "Ввести пароль" else "Пройти") { _, _ ->
                 store.pendingSettings = new
-                startActivity(Intent(this, ExitActivity::class.java).putExtra(ExitActivity.EXTRA_PURPOSE, ExitActivity.P_SETTINGS))
+                PasswordActivity.startGate(this, ExitActivity.P_SETTINGS)
                 finish()
             }.setNegativeButton("Отмена", null).show()
     }

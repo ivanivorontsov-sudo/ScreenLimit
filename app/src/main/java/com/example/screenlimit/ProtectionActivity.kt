@@ -57,13 +57,13 @@ class ProtectionActivity : AppCompatActivity() {
                 section("КАК СНЯТЬ")
                 text("Снять режим владельца можно только отсюда и только после 10 подтверждений. После этого приложение можно будет удалить обычным способом (сначала снимите и права администратора кнопкой ниже).", 14f)
                 button("Снять максимальную защиту (10 подтверждений)", style = 1) {
-                    startActivity(Intent(this@ProtectionActivity, ExitActivity::class.java).putExtra(ExitActivity.EXTRA_PURPOSE, ExitActivity.P_OWNER))
+                    PasswordActivity.startGate(this@ProtectionActivity, ExitActivity.P_OWNER)
                 }.id = R.id.btnRemoveOwner
             }
             section("УДАЛЕНИЕ ПРИЛОЖЕНИЯ")
             text("Пока включены права администратора, «Стоп-экран» нельзя удалить. Снять их — только после 10 подтверждений.", 14f)
             button("Снять права администратора (10 подтверждений)", style = 2) {
-                startActivity(Intent(this@ProtectionActivity, ExitActivity::class.java).putExtra(ExitActivity.EXTRA_PURPOSE, ExitActivity.P_ADMIN))
+                PasswordActivity.startGate(this@ProtectionActivity, ExitActivity.P_ADMIN)
             }.isEnabled = Owner.isAdmin(this@ProtectionActivity)
         }
     }
