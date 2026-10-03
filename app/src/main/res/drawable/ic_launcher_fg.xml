@@ -1,18 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 1.0.3: плоский белый глиф «пауза в кольце-таймере» (Metro, без градиентов/теней). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <!-- кольцо-таймер -->
-    <path android:strokeColor="#C5CAE9" android:strokeWidth="5" android:fillColor="#00000000"
-        android:strokeLineCap="round"
+    <!-- тонкое кольцо-таймер -->
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="4" android:fillColor="#00000000"
         android:pathData="M28,54 a26,26 0 1 1 52,0 a26,26 0 1 1 -52,0"/>
-    <!-- акцентная дуга прогресса -->
-    <path android:strokeColor="#FFFFFF" android:strokeWidth="5" android:fillColor="#00000000"
-        android:strokeLineCap="round"
-        android:pathData="M54,28 a26,26 0 0 1 22.5,13"/>
-    <!-- пауза: две скруглённые полосы -->
-    <path android:strokeColor="#FFFFFF" android:strokeWidth="7.5" android:strokeLineCap="round"
-        android:pathData="M48,45 L48,63"/>
-    <path android:strokeColor="#FFFFFF" android:strokeWidth="7.5" android:strokeLineCap="round"
-        android:pathData="M60,45 L60,63"/>
+    <!-- засечка 12 часов -->
+    <path android:fillColor="#FFFFFF" android:pathData="M52.5,24 h3 v7 h-3 z"/>
+    <!-- пауза: две плоские белые полосы -->
+    <path android:fillColor="#FFFFFF" android:pathData="M45,44 h6 v20 h-6 z"/>
+    <path android:fillColor="#FFFFFF" android:pathData="M57,44 h6 v20 h-6 z"/>
 </vector>

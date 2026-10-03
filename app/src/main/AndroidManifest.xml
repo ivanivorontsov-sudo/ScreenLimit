@@ -51,6 +51,7 @@
             android:name=".PasswordActivity"
             android:exported="false"
             android:excludeFromRecents="true"
+            android:taskAffinity="com.example.screenlimit.block"
             android:windowSoftInputMode="adjustResize" />
 
         <activity

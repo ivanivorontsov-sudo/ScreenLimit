@@ -39,6 +39,14 @@ class ExitActivity : AppCompatActivity() {
         supportActionBar?.hide()
         purpose = intent.getStringExtra(EXTRA_PURPOSE) ?: P_LOCK
         val store = Store.get(this)
+        // 1.0.3: выход из блокировки защищён паролем. Если пароль задан, экран 10 подтверждений (и фреш-старт,
+        // и восстановление прогресса) допустим ТОЛЬКО через действительные ворота пароля (см. PasswordActivity.startGate).
+        // Любой прямой/обходной запуск P_LOCK без недавнего ввода пароля отклоняется -> назад на экран блокировки.
+        if (purpose == P_LOCK && store.isPasswordSet() && !store.lockGateValid(SystemClock.elapsedRealtime())) {
+            if (store.exitProgress?.purpose == P_LOCK) store.exitProgress = null
+            if (store.state.locked) Guard.showBlock(this)
+            finish(); return
+        }
         // Случайное пересоздание экрана (клавиатура/системный диалог/возврат сторожем/смерть процесса) не сбрасывает прогресс.
         val saved = store.exitProgress?.takeIf {
             it.validFor(purpose, SystemClock.elapsedRealtime()) && (purpose != P_LOCK || store.state.locked) &&
@@ -60,10 +68,13 @@ class ExitActivity : AppCompatActivity() {
         // Тот же шаг после восстановления — время не обновляем (восстановление не продлевает тайм-аут шага).
         if (old != null && old.seed == seed && old.step == flow.current && old.purpose == purpose) return
         store.exitProgress = ExitProgress(purpose, seed, flow.current, SystemClock.elapsedRealtime(), System.currentTimeMillis())
+        // Ворота пароля живут ровно столько же, сколько прогресс (тот же момент времени) — продление невозможно в обход пароля.
+        if (purpose == P_LOCK && store.isPasswordSet()) store.markLockGate()
     }
 
     private fun forgetFlow() {
         Store.get(this).exitProgress = null
+        Store.get(this).clearLockGate()
         if (Guard.exitFlowRef?.get() === this) Guard.exitFlowRef = null
     }
 

@@ -141,6 +141,17 @@ class Store private constructor(ctx: Context) {
 
     @Synchronized fun resetPwFails() { p.edit().putInt(K_PW_FAILS, 0).putLong(K_PW_LOCK_UNTIL, 0).commit() }
 
+    // ---- Пропуск-ворота пароля для ВЫХОДА из блокировки (1.0.3, аддитивный ключ) ----
+    // Отмечается ПОСЛЕ успешного ввода пароля (см. PasswordActivity) и обновляется на каждом сохранённом шаге
+    // 10 подтверждений. ExitActivity для P_LOCK стартует/восстанавливается только при действительном пропуске —
+    // прямой запуск экрана подтверждений в обход пароля невозможен. Хранится elapsedRealtime: перезагрузка обнуляет.
+    @Synchronized fun markLockGate() { p.edit().putLong(K_LOCK_GATE, SystemClock.elapsedRealtime()).commit() }
+    @Synchronized fun lockGateValid(nowElapsed: Long): Boolean {
+        val at = p.getLong(K_LOCK_GATE, 0L)
+        return at > 0L && nowElapsed >= at && nowElapsed - at <= ExitProgress.MAX_AGE_MS
+    }
+    @Synchronized fun clearLockGate() { p.edit().remove(K_LOCK_GATE).commit() }
+
     private fun b64(bytes: ByteArray): String = Base64.encodeToString(bytes, Base64.NO_WRAP)
     private fun unb64(s: String): ByteArray = Base64.decode(s, Base64.NO_WRAP)
 
@@ -179,6 +190,7 @@ class Store private constructor(ctx: Context) {
         const val K_REC_SALT = "sl_pw_recovery_salt"
         const val K_PW_FAILS = "sl_pw_fail_count"
         const val K_PW_LOCK_UNTIL = "sl_pw_lock_until_elapsed"
+        const val K_LOCK_GATE = "sl_lock_gate_elapsed"   // 1.0.3
         const val K_DBG_WARN_UNIT = "sl_debug_warn_unit_ms"
         const val K_DBG_LIMIT_MS = "sl_debug_limit_ms"
         const val MAX_HISTORY = 2000

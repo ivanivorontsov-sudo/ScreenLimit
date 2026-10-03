@@ -157,6 +157,12 @@ class PasswordActivity : AppCompatActivity() {
     private fun onVerified() {
         when (next) {
             NEXT_CHANGE -> showSetPassword()
+            ExitActivity.P_LOCK -> {
+                // 1.0.3: пароль введён верно -> открыть короткоживущие ворота и запустить 10 подтверждений выхода.
+                Store.get(this).markLockGate()
+                startActivity(Intent(this, ExitActivity::class.java).putExtra(ExitActivity.EXTRA_PURPOSE, ExitActivity.P_LOCK))
+                finish()
+            }
             ExitActivity.P_SETTINGS, ExitActivity.P_OWNER, ExitActivity.P_ADMIN -> {
                 startActivity(Intent(this, ExitActivity::class.java).putExtra(ExitActivity.EXTRA_PURPOSE, next))
                 finish()
@@ -207,6 +213,7 @@ class PasswordActivity : AppCompatActivity() {
     private fun lockMsg(remMs: Long) = "Слишком много неверных попыток. Подождите ${(remMs + 999) / 1000} с."
 
     private fun gateReason(next: String) = when (next) {
+        ExitActivity.P_LOCK -> "Выход из блокировки (продление доступа к телефону) — это ослабление. Нужен пароль, затем 10 подтверждений."
         ExitActivity.P_OWNER -> "Снятие максимальной защиты — это ослабление. Нужен пароль, затем 10 подтверждений."
         ExitActivity.P_ADMIN -> "Снятие прав администратора — это ослабление. Нужен пароль, затем 10 подтверждений."
         NEXT_CHANGE -> "Чтобы сменить пароль, введите текущий пароль."
@@ -221,6 +228,12 @@ class PasswordActivity : AppCompatActivity() {
         }
         val et = TextInputEditText(til.context).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            // 1.0.3: как в ExitActivity (1.0.1) — без полноэкранной IME/extract-режима и без персонализации,
+            // чтобы клавиатура (в т.ч. «безопасная» OEM) корректно работала на экране блокировки.
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE or
+                android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI or
+                android.view.inputmethod.EditorInfo.IME_FLAG_NO_FULLSCREEN or
+                android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
         }
         til.addView(et)
         addView(til, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(10) })
