@@ -31,6 +31,10 @@ class PasswordActivity : AppCompatActivity() {
     private lateinit var next: String
     private val h = Handler(Looper.getMainLooper())
 
+    // 1.1.0: the password screen also counts as "our pause screen is up" (no cover / no relaunch over it).
+    override fun onResume() { super.onResume(); BlockerService.pauseResumed = true; BlockerService.coverDone() }
+    override fun onPause() { super.onPause(); BlockerService.pauseResumed = false }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         supportActionBar?.hide()

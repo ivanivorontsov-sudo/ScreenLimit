@@ -337,6 +337,7 @@ class BlockActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        BlockerService.pauseResumed = true; BlockerService.coverDone()
         Guard.addListener(listener)
         runCatching { Guard.tick(this) }
         if (!Store.get(this).state.locked) { release(); return }
@@ -346,14 +347,16 @@ class BlockActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
-        super.onPause(); Guard.removeListener(listener)
+        super.onPause(); BlockerService.pauseResumed = false; Guard.removeListener(listener)
         h.removeCallbacks(refresh); h.removeCallbacks(quoteTick)
     }
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         // Нажата «Домой»/«Недавние» в базовом режиме: вернуть экран (AccessibilityService сделает это мгновенно).
-        if (Store.get(this).state.locked && !Owner.maxProtection(this) && SystemClock.uptimeMillis() - allowedLaunchAt > 3_000)
+        // 1.1.0: only as a fallback when the accessibility service is off. With it on, this was the SECOND
+        // pause-screen launch 1.5 s after every home gesture (the service had already brought the screen back).
+        if (!BlockerService.running && Store.get(this).state.locked && !Owner.maxProtection(this) && SystemClock.uptimeMillis() - allowedLaunchAt > 3_000)
             h.postDelayed({
                 val fgPkg = Guard.foregroundPackage(this)
                 if (Store.get(this).state.locked && !isFinishing && !Allowed.isAllowedDuringLock(this, fgPkg, Store.get(this).settings.whitelist)) Guard.showBlock(this)

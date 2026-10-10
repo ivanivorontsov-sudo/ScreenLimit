@@ -227,7 +227,7 @@ class ExitActivity : AppCompatActivity() {
 
     // 1.0.1: onPause больше НЕ снимает защиту экрана подтверждений (клавиатура, выбор клавиатуры, системные диалоги
     // могут ставить активность на паузу). Экран считается «живым» до onDestroy — см. Guard.exitFlowAlive().
-    override fun onResume() { super.onResume(); resumed = true; Guard.exitFlowRef = java.lang.ref.WeakReference(this) }
+    override fun onResume() { super.onResume(); resumed = true; BlockerService.coverDone(); Guard.exitFlowRef = java.lang.ref.WeakReference(this) }
     override fun onPause() { super.onPause(); resumed = false }
     override fun onDestroy() {
         h.removeCallbacksAndMessages(null)

@@ -57,6 +57,9 @@ class BlockerService : AccessibilityService() {
                     // Экран подтверждений всё ещё resumed → это не смена приложения, а окно поверх (клавиатура
                     // без сведений об окне, всплывающее окно). Не перекрывать экран подтверждений заглушкой.
                     if (ExitActivity.resumed) { if (BuildConfig.DEBUG) android.util.Log.d("SLA11y", "ignore $pkg: exit flow resumed"); return }
+                    // 1.1.0: our own pause/password screens are already on top (e.g. the launcher/recents window
+                    // briefly reported during the home gesture) — nothing to do, no second popup.
+                    if (pauseScreenResumed()) { if (BuildConfig.DEBUG) android.util.Log.d("SLA11y", "ignore $pkg: pause screen resumed"); return }
                     if (BuildConfig.DEBUG) android.util.Log.d("SLA11y", "BOUNCE $pkg")
                     showOverlay(); bounce(false); return
                 }
@@ -120,6 +123,9 @@ class BlockerService : AccessibilityService() {
     // --- Мгновенная заглушка поверх запрещённого приложения (TYPE_ACCESSIBILITY_OVERLAY) ---
     private var overlay: android.view.View? = null
 
+    private val ui = android.os.Handler(android.os.Looper.getMainLooper())
+    private val reveal = Runnable { overlay?.findViewById<android.view.View>(R.id.ovContent)?.visibility = android.view.View.VISIBLE }
+
     private fun showOverlay() {
         if (overlay != null) return
         val wm = getSystemService(android.view.WindowManager::class.java)
@@ -138,9 +144,15 @@ class BlockerService : AccessibilityService() {
             android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             android.graphics.PixelFormat.OPAQUE)
         runCatching { wm.addView(v, lp); overlay = v }
+        // 1.1.0: the overlay is a silent cover (no text, no buttons) that hides the launcher/blocked app for the
+        // fraction of a second until the pause screen comes up, and is removed by the pause screen itself
+        // (BlockActivity/ExitActivity/PasswordActivity.onResume -> coverDone). Before 1.1.0 it was a second
+        // visible "popup" that stayed on top of the pause screen and needed an extra tap.
+        ui.removeCallbacks(reveal); ui.postDelayed(reveal, 2_500)
     }
 
     private fun hideOverlay() {
+        ui.removeCallbacks(reveal)
         val v = overlay ?: return
         overlay = null
         runCatching { getSystemService(android.view.WindowManager::class.java).removeView(v) }
@@ -148,11 +160,19 @@ class BlockerService : AccessibilityService() {
 
     override fun onInterrupt() {}
 
-    override fun onDestroy() { running = false; Guard.removeListener(listener); hideOverlay(); super.onDestroy() }
+    override fun onCreate() { super.onCreate(); instance = this }
+
+    override fun onDestroy() { instance = null; running = false; Guard.removeListener(listener); hideOverlay(); super.onDestroy() }
     override fun onUnbind(intent: android.content.Intent?): Boolean { running = false; return super.onUnbind(intent) }
 
     companion object {
         @Volatile var running = false
+        @Volatile private var instance: BlockerService? = null
+        /** Our pause screen (or the exit/password flow on top of it) is resumed right now. */
+        @Volatile var pauseResumed = false
+        fun pauseScreenResumed() = pauseResumed || ExitActivity.resumed
+        /** Called by the pause screens when they are on screen: drop the silent cover. */
+        fun coverDone() { android.os.Handler(android.os.Looper.getMainLooper()).post { instance?.hideOverlay() } }
         /** До этого момента (uptime) защитные страницы не закрываются — пользователь выдаёт недостающее разрешение из онбординга. */
         @Volatile var grantUntil = 0L
         fun grantWindowOpen() = SystemClock.uptimeMillis() < grantUntil

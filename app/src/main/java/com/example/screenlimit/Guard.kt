@@ -163,6 +163,8 @@ object Guard {
         }
     }
 
+    @Volatile private var lastShowBlock = 0L
+
     fun showBlock(ctx: Context) {
         // Идёт выход из блокировки: не уничтожать экран подтверждений (BlockActivity — singleTask и закрыл бы его),
         // а вернуть его самого на передний план — на том же шаге.
@@ -176,6 +178,11 @@ object Guard {
             }.onFailure { Log.w(TAG, "bring exit flow", it) }
             return
         }
+        // 1.1.0: one launch per gesture. Several sources (accessibility event of the launcher, its recents window,
+        // the tick) used to fire within the same second and stacked two pause-screen launches.
+        val now = SystemClock.uptimeMillis()
+        if (BlockerService.pauseResumed || now - lastShowBlock < 1_000) return
+        lastShowBlock = now
         if (BuildConfig.DEBUG) Log.d(TAG, "showBlock from " + Throwable().stackTrace.drop(1).take(2).joinToString(" <- ") { it.className.substringAfterLast('.') + "." + it.methodName })
         runCatching {
             ctx.startActivity(Intent(ctx, BlockActivity::class.java)
